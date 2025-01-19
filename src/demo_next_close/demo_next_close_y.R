@@ -28,7 +28,11 @@ demo_next_close_y <- function(db.con) {
     mutate(demo_next_close = demo_next_close/close) %>% 
     filter(!is.na(demo_next_close)) %>% 
     mutate(date = lubridate::floor_date(timestamp, 'day')) %>% 
-    select(-timestamp)
+    select(
+      symbol,
+      date,
+      demo_next_close
+    )
 
   return(res)
 
