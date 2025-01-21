@@ -20,8 +20,6 @@ demo_next_close <- function(
   # Data setup (Y Var, Test/Train Split)
   y_df <- y.function(db.con = db.con)
   
-  print(nrow(y_df))
-  
   df <- x.data %>% 
     bind_cols(features) %>% 
     inner_join(
@@ -32,13 +30,8 @@ demo_next_close <- function(
     filter_all(all_vars(!is.infinite(.))) %>% 
     filter_all(all_vars(!is.na(.)))
   
-  print(nrow(df))
-  
   train_df <- filter(df, date < cutoff.date)
   test_df <- filter(df, date >= cutoff.date)
-  
-  print(nrow(train_df))
-  print(nrow(test_df))
   
   num_months <- lubridate::floor_date(
     train_df$date, 
