@@ -1,6 +1,6 @@
 demo_next_close <- function(
-  x.data, features, y.function,
-  db.con, cutoff.date,
+  x.data, features.data, y.data,
+  cutoff.date,
   tune.initial, tune.iter, tune.no.improve
 ) {
   
@@ -17,13 +17,11 @@ demo_next_close <- function(
   require(glmnet)
   require(ranger)
   
-  # Data setup (Y Var, Test/Train Split)
-  y_df <- y.function(db.con = db.con)
   
   df <- x.data %>% 
     bind_cols(features) %>% 
     inner_join(
-      y_df,
+      y.data,
       by = c('symbol', 'date')
     ) %>% 
     # Removing Inf and NA values because Recipes wasn't doing it???
@@ -116,50 +114,51 @@ demo_next_close <- function(
     )
   )
   
+  return(wf_set_tuned)
+  
   results <- purrr::map(
     .x = wf_set_tuned$wflow_id,
     .f = function(x) {
-      
-      best_results <- wf_set_tuned %>%
+
+      best_workflow_set_result <- wf_set_tuned %>%
         workflowsets::extract_workflow_set_result(x) %>%
         tune::select_best(metric = 'mae')
-      
-      best_wflow <- wf_set_tuned %>%
+
+      best_fit_workflow <- wf_set_tuned %>%
         workflowsets::extract_workflow(x) %>%
         tune::finalize_workflow(best_results) %>%
         generics::fit(data = train_df)
-      
+
       training_predicted <- train_df %>%
-        bind_cols(predict(best_wflow, .)) %>%
+        bind_cols(predict(best_fit_workflow, .)) %>%
         mae(
           truth = demo_next_close,
           estimate = .pred
         )
-      
+
       holdout_predicted <- test_df %>%
-        bind_cols(predict(best_wflow, .)) %>%
+        bind_cols(predict(best_fit_workflow, .)) %>%
         mae(
           truth = demo_next_close,
           estimate = .pred
         )
-      
+
       result <- list()
-      result$model_obj <- best_wflow
+      result$model_obj <- best_fit_workflow
       result$model_name <- 'demo_next_close'
-      result$model_recipe <- strsplit(x, '_')[[1]][1]
-      result$model_model <- strsplit(x, '_')[[1]][2]
-      result$model_obj_type <- 'workflow'
-      result$model_create_date <- Sys.Date()
-      result$feature_hash <- substr(rlang::hash(sort(names(features))), 1, 8)
-      result$model_hash <- substr(rlang::hash(best_wflow), 1, 8)
+      result$wflow_id <- x
+      result$model_recipe <- 'get recipe name either from wflow or id' 
+        #strsplit(x, '_')[[1]][1]
+      result$model_engine <- 'get engine name either from wflow or id' 
+        #strsplit(x, '_')[[1]][2]
       result$model_training_perf <- training_predicted$.estimate
       result$model_holdout_perf <- holdout_predicted$.estimate
-      
+
       return(result)
-      
+
     }
   )
-  
+
   return(results)
   
 }

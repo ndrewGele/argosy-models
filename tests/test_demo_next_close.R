@@ -48,38 +48,58 @@ feature_def <- source('./src/demo_next_close/demo_next_close_features.R')$value
 feature_spec <- generate_feature_spec(feature_def)
 features_df <- create_features(x_data, feature_spec)
 
+feature_hash <- feature_spec |> 
+  names() |> 
+  sort() |>
+  rlang::hash() |> 
+  substr(1, 8)
+
+feature_spec_string <- feature_spec |> 
+  as.character() |> 
+  jsonlite::toJSON() |> 
+  as.character()
+
+
+# Pull Y Data -------------------------------------------------------------
+
+y_function <- source('./src/demo_next_close/demo_next_close_y.R')$value
+y_data <- y_function(db.con = db.con)
+
 
 # Tune and Train Model ----------------------------------------------------
 
 model_fun <- source('./src/demo_next_close/demo_next_close.R')$value
-y_function <- source('./src/demo_next_close/demo_next_close_y.R')$value
 
 test_model_results <- model_fun(
   x.data = x_data,
   features = features_df,
-  y.function = y_function,
-  db.con = db_con,
+  y.data = y_data,
   cutoff.date = lubridate::ymd(Sys.getenv('MODEL_CUTOFF')),
   tune.initial = as.integer(Sys.getenv('MODEL_TUNE_INITIAL')),
   tune.iter = as.integer(Sys.getenv('MODEL_TUNE_ITER')),
   tune.no.improve = as.integer(Sys.getenv('MODEL_TUNE_NO_IMPROVE'))
 )
 
-test_model_results_df <- purrr::map_dfr(
+
+# Simulate Database Write -------------------------------------------------
+
+feature_table <- data.frame(
+  feature_hash = feature_hash,
+  feature_spec_string = feature_spec_string
+)
+
+test_model_results_table <- purrr::map_dfr(
   .x = test_model_results,
   .f = function(x) {
     data.frame(
       name = x$model_name,
       recipe = x$model_recipe,
       model = x$model_model,
-      feature_hash = x$feature_hash,
-      feature_spec = feature_spec |> 
-        as.character() |> 
-        jsonlite::toJSON() |> 
-        as.character(),
+      feature_hash = feature_hash,
       training_perf = x$model_training_perf,
       holdout_perf = x$model_holdout_perf,
       file_name = glue::glue('{x$model_name}_{x$feature_hash}.RDS'),
+      mode = 'new', # this is picked mode
       update_timestamp = Sys.time()
     )
   }
@@ -93,14 +113,25 @@ sample_model <- test_model_results_df |>
   sample_n(1)
 
 # We can take the feature spec json and convert it back to a list for tweaking
-saved_model_spec <- sample_model$feature_spec |> 
+saved_feature_spec <- feature_table$feature_spec_string |> 
   jsonlite::fromJSON() |> 
   purrr::map(\(x) eval(parse(text = x)))
 
-test_tweaked_spec <- tweak_feature_spec(
-  feature.spec = saved_model_spec,
+tweaked_feature_spec <- tweak_feature_spec(
+  feature.spec = saved_feature_spec,
   feature.def = source('./src/demo_next_close/demo_next_close_features.R')$value
 )
+
+tweaked_feature_hash <- tweaked_feature_spec |> 
+  names() |> 
+  sort() |>
+  rlang::hash() |> 
+  substr(1, 8)
+
+tweaked_feature_spec_string <- tweaked_feature_spec |> 
+  as.character() |> 
+  jsonlite::toJSON() |> 
+  as.character()
 
 test_tweaked_features <- create_features(
   data = x_data,
@@ -110,8 +141,7 @@ test_tweaked_features <- create_features(
 test_tweaked_model_results <- model_fun(
   x.data = x_data,
   features = test_tweaked_features,
-  y.function = y_function,
-  db.con = db_con,
+  y.data = y_data,
   cutoff.date = lubridate::ymd(Sys.getenv('MODEL_CUTOFF')),
   tune.initial = as.integer(Sys.getenv('MODEL_TUNE_INITIAL')),
   tune.iter = as.integer(Sys.getenv('MODEL_TUNE_ITER')),
@@ -120,6 +150,18 @@ test_tweaked_model_results <- model_fun(
 
 DBI::dbDisconnect(db_con)
 
+
+# Simulate Tweaked Database Write -----------------------------------------
+
+# Features lookup table will map hashes to spec strings
+feature_table <- feature_table |> 
+  bind_rows(
+    data.frame(
+      feature_hash = tweaked_feature_hash,
+      feature_spec_string = tweaked_feature_spec_string
+    )
+  )
+
 test_tweaked_model_results_df <- purrr::map_dfr(
   .x = test_tweaked_model_results,
   .f = function(x) {
@@ -127,14 +169,11 @@ test_tweaked_model_results_df <- purrr::map_dfr(
       name = x$model_name,
       recipe = x$model_recipe,
       model = x$model_model,
-      feature_hash = x$feature_hash,
-      feature_spec = test_tweaked_spec |> 
-        as.character() |> 
-        jsonlite::toJSON() |> 
-        as.character(),
+      feature_hash = tweaked_feature_hash,
       training_perf = x$model_training_perf,
       holdout_perf = x$model_holdout_perf,
       file_name = glue::glue('{x$model_name}_{x$feature_hash}.RDS'),
+      mode = 'tweaked',
       update_timestamp = Sys.time()
     )
   }
