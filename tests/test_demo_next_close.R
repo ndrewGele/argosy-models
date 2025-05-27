@@ -66,14 +66,22 @@ y_function <- source('./src/demo_next_close/demo_next_close_y.R')$value
 y_data <- y_function(db.con = db.con)
 
 
+# Combine Data ------------------------------------------------------------
+
+df <- x_data |> 
+  bind_cols(features) |> 
+  inner_join(
+    y.data,
+    by = c('symbol', 'date')
+  )
+  
+
 # Tune and Train Model ----------------------------------------------------
 
 model_fun <- source('./src/demo_next_close/demo_next_close.R')$value
 
 test_model_results <- model_fun(
-  x.data = x_data,
-  features = features_df,
-  y.data = y_data,
+  data = df,
   cutoff.date = lubridate::ymd(Sys.getenv('MODEL_CUTOFF')),
   tune.initial = as.integer(Sys.getenv('MODEL_TUNE_INITIAL')),
   tune.iter = as.integer(Sys.getenv('MODEL_TUNE_ITER')),

@@ -1,5 +1,5 @@
 demo_next_close <- function(
-  x.data, features.data, y.data,
+  data,
   cutoff.date,
   tune.initial, tune.iter, tune.no.improve
 ) {
@@ -18,12 +18,7 @@ demo_next_close <- function(
   require(ranger)
   
   
-  df <- x.data %>% 
-    bind_cols(features) %>% 
-    inner_join(
-      y.data,
-      by = c('symbol', 'date')
-    ) %>% 
+  df <- data %>% 
     # Removing Inf and NA values because Recipes wasn't doing it???
     filter_all(all_vars(!is.infinite(.))) %>% 
     filter_all(all_vars(!is.na(.)))
